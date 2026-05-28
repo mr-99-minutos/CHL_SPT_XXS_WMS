@@ -1,168 +1,411 @@
-<!-- python3 -m http.server 8000  -->
-<!-- http://localhost:8000/index.html -->
-
+<!-- python3 -m http.server 8000 → http://localhost:8000 -->
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <meta charset="utf-8">
-    <title>Visualizar GeoJSON con Colores Aleatorios</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    
-    <!-- Incluir la librería y los estilos de Mapbox -->
-    <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
-    <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
-    <!-- Geocoder CSS -->
-    <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.2/mapbox-gl-geocoder.css" rel="stylesheet" />
-    <!-- Geocoder JS -->
-    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.2/mapbox-gl-geocoder.min.js"></script>
+  <meta charset="utf-8">
+  <title>SPT XXS WMS — Sorter Loop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="./config.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; color: #eee; }
+    body { display: flex; flex-direction: column; }
 
+    /* ── TABS ── */
+    #tabs { display: flex; background: #111; border-bottom: 2px solid #333; flex-shrink: 0; height: 38px; }
+    .tab-btn { padding: 0 22px; background: none; border: none; color: #aaa; font-size: 13px; cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab-btn.active { color: #fff; border-bottom-color: #5b8ed6; }
+    .tab-btn:hover:not(.active) { color: #ddd; background: #1a1a1a; }
 
-    <style>
-        body { margin: 0; padding: 0; }
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-        /* Asegurar que el buscador esté en la parte superior */
-        .mapboxgl-ctrl-geocoder {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            width: 50%;
-            z-index: 1;
-        }
-    </style>
+    /* ── MAP ── */
+    #tab-map { display: none; flex: 1; position: relative; }
+    #tab-map.active { display: block; }
+    #map { position: absolute; inset: 0; }
+    .mapboxgl-popup-content { color: #111 !important; font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; padding: 14px 16px; border-radius: 8px; }
+    .mapboxgl-popup-close-button { color: #444 !important; font-size: 18px; }
+
+    /* ── SORTER ── */
+    #tab-sorter { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    #tab-sorter.active { display: flex; }
+
+    /* Header */
+    #sorter-header { background: #111; padding: 5px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid #333; }
+    .badge-spt { background: #333; color: #eee; padding: 2px 7px; border-radius: 4px; font-weight: 700; font-size: 12px; }
+    #sorter-title { font-size: 14px; font-weight: 600; }
+    #search-box { padding: 4px 8px; border-radius: 5px; border: 1px solid #555; background: #222; color: #eee; font-size: 12px; width: 140px; }
+    .filter-sel { padding: 4px 7px; border-radius: 5px; border: 1px solid #555; background: #222; color: #eee; font-size: 12px; }
+    #total-badge { background: #222; border: 1px solid #444; padding: 3px 9px; border-radius: 10px; font-size: 12px; color: #bbb; }
+    #sorter-meta { margin-left: auto; font-size: 10px; color: #555; }
+    #legend { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .leg-item { display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; padding: 2px 5px; border-radius: 3px; border: 1px solid transparent; }
+    .leg-item:hover { border-color: #555; }
+    .leg-item.active-filter { border-color: #fff; background: #2a2a2a; }
+    .leg-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+    /* Scale wrapper */
+    #sorter-body  { flex: 1; overflow: hidden; position: relative; }
+    #sorter-inner { display: flex; position: absolute; top: 0; left: 0; transform-origin: top left; padding: 10px; gap: 0; align-items: flex-start; }
+
+    /* ── Panels ── */
+    .panel { display: flex; flex-direction: column; border-radius: 7px; overflow: hidden; }
+    #left-panel  { background: #1e1e1e; border: 1px solid #444; width: 150px; }
+    #right-panel { background: #f7f8fa; border: 1px solid #ccc; color: #111; width: 150px; }
+
+    .panel-title { padding: 5px 10px; font-size: 10px; font-weight: 700; letter-spacing: .4px; display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    #left-panel  .panel-title { background: #111; color: #eee; }
+    #right-panel .panel-title { background: #e0e0e0; color: #111; }
+    .panel-title .dot { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+    /* Zone stack */
+    .zone-stack { display: flex; flex-direction: column; padding: 4px; gap: 3px; }
+    .zone-divider { height: 1px; margin: 3px 0; }
+    #left-panel  .zone-divider { background: #333; }
+    #right-panel .zone-divider { background: #ddd; }
+
+    /* Cells */
+    .cell { width: 100%; height: 36px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; cursor: pointer; border: 2px solid transparent; transition: filter .12s, border-color .12s; user-select: none; letter-spacing: .5px; }
+    .cell:hover { filter: brightness(1.18); border-color: rgba(255,255,255,.55); }
+    .cell.highlighted { border-color: #fff !important; filter: brightness(1.3); }
+    .cell.dimmed { opacity: .2; pointer-events: none; }
+    #right-panel .cell:hover { border-color: rgba(0,0,0,.35); }
+    #right-panel .cell.highlighted { border-color: #222 !important; }
+    .cell.series-cell { height: 30px; font-size: 12px; }
+
+    /* Series section */
+    .series-section-lbl { font-size: 9px; color: #555; font-weight: 700; padding: 3px 2px 1px; letter-spacing: .5px; text-transform: uppercase; }
+
+    /* Conveyor */
+    #conveyor { width: 90px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; padding: 6px 0; }
+    .conv-arch { width: 60px; height: 30px; border-radius: 30px 30px 0 0; border: 4px solid #2a2a3a; border-bottom: none; margin-bottom: 0; }
+    .conv-sides { display: flex; justify-content: space-between; width: 60px; flex: 1; }
+    .conv-side  { width: 18px; background: #2a2a3a; border-radius: 3px; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; padding: 6px 0; }
+    .conv-arrow { color: #555; font-size: 11px; }
+    .conv-label { font-size: 8px; color: #444; text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; }
+
+    /* Tooltip */
+    #tt { position: fixed; background: #1e1e2e; color: #eee; padding: 9px 13px; border-radius: 7px; font-size: 11px; pointer-events: none; display: none; z-index: 999; border: 1px solid #444; box-shadow: 0 4px 18px rgba(0,0,0,.6); min-width: 160px; max-width: 280px; }
+    .tt-nom  { font-size: 16px; font-weight: 800; margin-bottom: 5px; }
+    .tt-row  { display: flex; justify-content: space-between; gap: 10px; margin-top: 2px; }
+    .tt-lbl  { color: #777; }
+    .tt-members { margin-top: 6px; font-size: 10px; color: #bbb; line-height: 1.6; word-break: break-all; }
+  </style>
 </head>
 <body>
 
-<div id="map"></div>
+<div id="tabs">
+  <button class="tab-btn active" onclick="showTab('sorter')">📦 Sorter Loop XXS</button>
+  <button class="tab-btn" onclick="showTab('map')">🗺 Mapa de Cobertura</button>
+</div>
+
+<div id="tab-map"><div id="map"></div></div>
+
+<div id="tab-sorter" class="active">
+  <div id="sorter-header">
+    <span class="badge-spt">SPT XXS</span>
+    <span id="sorter-title">Sorter Loop — RMRU</span>
+    <input id="search-box" type="text" placeholder="Buscar (001, 801...)" oninput="applyFilters()">
+    <select id="filter-proveedor" class="filter-sel" onchange="applyFilters()">
+      <option value="">Todos los proveedores</option>
+    </select>
+    <span id="total-badge">— total</span>
+    <div id="legend"></div>
+    <span id="sorter-meta"></span>
+  </div>
+
+  <div id="sorter-body">
+    <div id="sorter-inner">
+
+      <!-- LEFT PANEL (negro) -->
+      <div id="left-panel" class="panel">
+        <div class="panel-title">
+          <span class="dot" style="background:#111;border:1px solid #555"></span>
+          FONDO NEGRO → IZQ.
+        </div>
+        <div id="left-zones" class="zone-stack"></div>
+      </div>
+
+      <!-- CONVEYOR -->
+      <div id="conveyor">
+        <div class="conv-arch"></div>
+        <div class="conv-sides">
+          <div class="conv-side">
+            <div class="conv-arrow">▼</div>
+            <div class="conv-arrow">▼</div>
+            <div class="conv-arrow">▼</div>
+          </div>
+          <div class="conv-side">
+            <div class="conv-arrow">▲</div>
+            <div class="conv-arrow">▲</div>
+            <div class="conv-arrow">▲</div>
+          </div>
+        </div>
+        <div class="conv-label">Sorter Loop</div>
+      </div>
+
+      <!-- RIGHT PANEL (blanco) -->
+      <div id="right-panel" class="panel">
+        <div class="panel-title">
+          <span class="dot" style="background:#eee;border:1px solid #aaa"></span>
+          FONDO BLANCO → DER.
+        </div>
+        <div id="right-zones" class="zone-stack"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="tt"></div>
 
 <script>
-    window.onload = function() {
-        // Tu token de acceso a Mapbox
-        mapboxgl.accessToken = 'pk.eyJ1IjoibXItOTktbWludXRvcyIsImEiOiJjbTFndGFocDUwNnJsMmpvb2Q2cTZiNGl5In0.0dlNGjiV9r8nLfZU1d6_6g'; // Reemplaza con tu token de Mapbox
+// ── Config ────────────────────────────────────────────────────────────────────
+const GEOJSON = './spt_xxs_26052026_4_final.geojson';
+const _MBT = atob('cGsuZXlKMUlqb2liWEl0T1RrdGJXbHVkWFJ2Y3lJc0ltRWlPaUpqYlRGbmRHRm9jRFV3Tm5Kc01tcHZiMlEyY1RaaU5HbDVJbjAuMGRsTkdqaVY5cjhuTGZaVTFkNl82Zw==');
+const MAPBOX_TOKEN = (typeof window.MAPBOX_TOKEN !== 'undefined' && window.MAPBOX_TOKEN) ? window.MAPBOX_TOKEN : _MBT;
 
-        // Crear el mapa
-        const map = new mapboxgl.Map({
-            container: 'map', // Id del div donde se mostrará el mapa
-            style: 'mapbox://styles/mapbox/streets-v11', // Estilo del mapa
-            center: [-71.5430, -35.6751], // Posición inicial [longitud, latitud]
-            zoom: 4.5 // Nivel de zoom inicial
-        });
+// ── Colours ───────────────────────────────────────────────────────────────────
+const PC = {
+  '99minutos':'#5b8ed6','SP Viña':'#7fb3d3','Chilexpress':'#c9a63c',
+  'SP Renny':'#7855a0','Urbano':'#9e9e9e','Chevalier':'#26a69a',
+  'PDQ':'#e53935','JAID':'#f9a825','Correos':'#43a047'
+};
+const pColor = p => PC[p] || '#888';
+const isLight = h => { const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); return(r*299+g*587+b*114)/1000>150; };
 
-        // Añadir el control de navegación y mantener habilitado el zoom de scroll
-        map.addControl(new mapboxgl.NavigationControl());
-    
-        // Geocoder (buscador de direcciones)
-        const geocoder = new MapboxGeocoder({
-            accessToken: mapboxgl.accessToken,
-            mapboxgl: mapboxgl
-        });
-        map.addControl(geocoder, 'top-left');
+// ── Layout (from sorter diagram image) ───────────────────────────────────────
+// LEFT (negro): 005, 006, 008, 009  → then series 200-900
+// RIGHT (blanco): 004×4, 001, 002, 003, 007×4
+const LEFT_PRIMARY  = [
+  { nom:'005', count:1 },
+  { nom:'006', count:1 },
+  { nom:'008', count:1 },
+  { nom:'009', count:1 },
+];
+const LEFT_SERIES   = [200,300,400,500,600,700,800,900];
+const RIGHT_PRIMARY = [
+  { nom:'004', count:4 },
+  { nom:'001', count:1 },
+  { nom:'002', count:1 },
+  { nom:'003', count:1 },
+  { nom:'007', count:4 },
+];
 
+// ── State ─────────────────────────────────────────────────────────────────────
+let FM = {}, allFeats = [], seriesMap = {}, mapGL = null;
 
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showTab(id) {
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',(i===0&&id==='sorter')||(i===1&&id==='map')));
+  document.getElementById('tab-map').classList.toggle('active', id==='map');
+  document.getElementById('tab-sorter').classList.toggle('active', id==='sorter');
+  if(id==='map'&&!mapGL) initMap();
+  if(id==='map'&&mapGL) mapGL.resize();
+}
 
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const ttEl = document.getElementById('tt');
+function showTip(e, nom) {
+  const p=FM[nom]; if(!p) return;
+  const c=pColor(p.proveedor);
+  ttEl.innerHTML=`<div class="tt-nom" style="color:${c}">${p.zonificacion}</div>
+    <div class="tt-row"><span class="tt-lbl">Proveedor</span><strong style="color:${c}">${p.proveedor}</strong></div>
+    <div class="tt-row"><span class="tt-lbl">Estación</span><strong>${p.station}</strong></div>
+    <div class="tt-row"><span class="tt-lbl">Capacidad</span><strong>${p.capacity}</strong></div>
+    <div class="tt-row"><span class="tt-lbl">Servicio</span><strong>${p.service} XXS</strong></div>`;
+  ttEl.style.display='block'; moveTip(e);
+}
+function showSeriesTip(e, series, members) {
+  const provSet=[...new Set(members.map(n=>FM[n]?.proveedor).filter(Boolean))];
+  const listed=members.slice(0,60).join(' · ')+(members.length>60?' …':'');
+  ttEl.innerHTML=`<div class="tt-nom">Serie ${series}s</div>
+    <div class="tt-row"><span class="tt-lbl">Posiciones</span><strong>${members.length}</strong></div>
+    <div class="tt-row"><span class="tt-lbl">Proveedores</span><strong>${provSet.join(', ')}</strong></div>
+    <div class="tt-members">${listed}</div>`;
+  ttEl.style.display='block'; moveTip(e);
+}
+function moveTip(e) {
+  ttEl.style.left=Math.min(e.clientX+14,innerWidth-300)+'px';
+  ttEl.style.top =Math.min(e.clientY+14,innerHeight-160)+'px';
+}
+function hideTip() { ttEl.style.display='none'; }
 
+// ── Cell ──────────────────────────────────────────────────────────────────────
+function mkCell(nom, isLeft) {
+  const p=FM[nom];
+  const d=document.createElement('div'); d.className='cell'; d.textContent=nom;
+  if(p){ const c=pColor(p.proveedor); d.style.background=c; d.style.color=isLight(c)?'#111':'#fff'; }
+  else { d.style.background=isLeft?'#252535':'#ddd'; d.style.color=isLeft?'#444':'#aaa'; }
+  d.addEventListener('mouseenter',e=>showTip(e,nom));
+  d.addEventListener('mousemove', e=>moveTip(e));
+  d.addEventListener('mouseleave',hideTip);
+  d.addEventListener('click',()=>{
+    if(!p)return;
+    document.querySelectorAll('.cell.highlighted').forEach(c=>c.classList.remove('highlighted'));
+    d.classList.add('highlighted');
+    showTab('map'); if(mapGL) flyTo(nom);
+  });
+  return d;
+}
 
+function mkSeriesCell(series) {
+  const members=seriesMap[series]||[];
+  const d=document.createElement('div'); d.className='cell series-cell'; d.textContent=String(series);
+  const provCounts={};
+  members.forEach(n=>{const pv=FM[n]?.proveedor;if(pv) provCounts[pv]=(provCounts[pv]||0)+1;});
+  const dominant=Object.entries(provCounts).sort((a,b)=>b[1]-a[1])[0]?.[0];
+  const c=dominant?pColor(dominant):'#444';
+  d.style.background=c; d.style.color=isLight(c)?'#111':'#fff';
+  d.addEventListener('mouseenter',e=>showSeriesTip(e,series,members));
+  d.addEventListener('mousemove', e=>moveTip(e));
+  d.addEventListener('mouseleave',hideTip);
+  d.addEventListener('click',()=>{
+    document.querySelectorAll('.cell.highlighted').forEach(c=>c.classList.remove('highlighted'));
+    d.classList.add('highlighted');
+    showTab('map'); if(mapGL&&members.length) highlightSeries(members);
+  });
+  return d;
+}
 
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  const lz=document.getElementById('left-zones');
+  const rz=document.getElementById('right-zones');
+  lz.innerHTML=''; rz.innerHTML='';
 
+  // Left primary
+  LEFT_PRIMARY.forEach((zd,i)=>{
+    if(i>0){ const sep=document.createElement('div');sep.className='zone-divider';lz.appendChild(sep); }
+    for(let j=0;j<zd.count;j++) lz.appendChild(mkCell(zd.nom,true));
+  });
 
-        // Función para generar colores aleatorios
-        function getRandomColor() {
-            const letters = '0123456789ABCDEF';
-            let color = '#';
-            for (let i = 0; i < 6; i++) {
-                color += letters[Math.floor(Math.random() * 16)];
-            }
-            return color;
-        }
+  // Left series
+  const sep2=document.createElement('div');sep2.className='zone-divider';lz.appendChild(sep2);
+  const slbl=document.createElement('div');slbl.className='series-section-lbl';slbl.textContent='Regionales';lz.appendChild(slbl);
+  LEFT_SERIES.forEach(s=>{ if(seriesMap[s]?.length) lz.appendChild(mkSeriesCell(s)); });
 
-        // Objeto para almacenar colores generados por nombre
-        const colorMap = {};
+  // Right zones
+  RIGHT_PRIMARY.forEach((zd,i)=>{
+    if(i>0){ const sep=document.createElement('div');sep.className='zone-divider';rz.appendChild(sep); }
+    for(let j=0;j<zd.count;j++) rz.appendChild(mkCell(zd.nom,false));
+  });
 
-        // Cargar y agregar el GeoJSON
-        map.on('load', () => {
-            // Agregar la fuente GeoJSON
-            map.addSource('geojson-data', {
-                'type': 'geojson',
-                'data': './spt_xxs_10112025_1.geojson' // Ruta al archivo GeoJSON
-            });
+  scaleToFit();
+}
 
-            // Leer el GeoJSON y asignar colores aleatorios
-            fetch('./spt_xxs_10112025_1.geojson')
-                .then(response => response.json())
-                .then(data => {
-                    // Asignar colores a los nombres únicos
-                    data.features.forEach(feature => {
-                        const name = feature.properties.name;
-                        if (!colorMap[name]) {
-                            colorMap[name] = '#12f200';
-                            // colorMap[name] = getRandomColor();
-                        }
-                    });
+function scaleToFit() {
+  const body=document.getElementById('sorter-body');
+  const inner=document.getElementById('sorter-inner');
+  inner.style.transform='none';
+  const scale=Math.min(body.clientWidth/inner.scrollWidth, body.clientHeight/inner.scrollHeight, 1);
+  inner.style.transform=`scale(${scale})`;
+}
+window.addEventListener('resize', scaleToFit);
 
-                    // Agregar la capa con colores aleatorios
-                    map.addLayer({
-                        'id': 'geojson-layer',
-                        'type': 'fill',
-                        'source': 'geojson-data',
-                        'paint': {
-                            'fill-color': [
-                                'match',
-                                ['get', 'name'],
-                                ...Object.entries(colorMap).flat(),
-                                '#888888' // Color por defecto
-                            ],
-                            'fill-opacity': 0.2
-                        }
-                    });
+// ── Filters ───────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const s=document.getElementById('search-box').value.trim().toLowerCase();
+  const p=document.getElementById('filter-proveedor').value;
+  let vis=0;
+  document.querySelectorAll('.cell').forEach(cell=>{
+    const nom=cell.textContent; const fp=FM[nom];
+    if(!fp)return;
+    const ok=(!s||nom.includes(s)||fp.zonificacion.toLowerCase().includes(s))&&(!p||fp.proveedor===p);
+    cell.classList.toggle('dimmed',!ok); if(ok) vis++;
+  });
+  document.getElementById('total-badge').textContent=`${vis} posiciones`;
+}
 
-                    // Agregar el borde a los polígonos
-                    map.addLayer({
-                        'id': 'outline',
-                        'type': 'line',
-                        'source': 'geojson-data',
-                        'layout': {},
-                        'paint': {
-                            'line-color': '#000',
-                            'line-width': 0.1
-                        }
-                    });
-                });
+function buildControls() {
+  const provs=[...new Set(allFeats.map(f=>f.properties.proveedor))].sort();
+  const ps=document.getElementById('filter-proveedor');
+  provs.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;ps.appendChild(o);});
+  const leg=document.getElementById('legend');
+  provs.forEach(p=>{
+    const cnt=allFeats.filter(f=>f.properties.proveedor===p).length;
+    const item=document.createElement('div');item.className='leg-item';
+    item.innerHTML=`<span class="leg-dot" style="background:${pColor(p)}"></span>${p} <span style="color:#666">(${cnt})</span>`;
+    item.addEventListener('click',()=>{
+      const el=document.getElementById('filter-proveedor');
+      el.value=el.value===p?'':p;
+      document.querySelectorAll('.leg-item').forEach(i=>i.classList.remove('active-filter'));
+      if(el.value===p)item.classList.add('active-filter');
+      applyFilters();
+    });
+    leg.appendChild(item);
+  });
+}
 
-            // Agregar un popup al hacer clic en un polígono
-            map.on('click', 'geojson-layer', (e) => {
-                const properties = e.features[0].properties;
+function buildSeriesMap() {
+  [200,300,400,500,600,700,800,900].forEach(base=>{
+    seriesMap[base]=allFeats
+      .filter(f=>{const n=parseInt(f.properties.nomenclatura);return n>=base&&n<base+100;})
+      .map(f=>f.properties.nomenclatura).sort();
+  });
+}
 
-                // Mostrar solo las propiedades 'name', 'service', 'commune' y 'station'
-                const content = `
-                    <strong>zonificacion:</strong> ${properties.zonificacion}<br>
-                    <strong>service:</strong> ${properties.service}<br>
-                    <strong>capacity:</strong> ${properties.capacity}<br>
-                    <strong>station:</strong> ${properties.station}<br>
-                    <strong>proveedor:</strong> ${properties.proveedor}
-                `;
+// ── Map ───────────────────────────────────────────────────────────────────────
+function initMap() {
+  mapboxgl.accessToken=MAPBOX_TOKEN;
+  mapGL=new mapboxgl.Map({container:'map',style:'mapbox://styles/mapbox/streets-v11',center:[-71.543,-35.675],zoom:4.5});
+  mapGL.addControl(new mapboxgl.NavigationControl());
+  mapGL.on('load',()=>{
+    mapGL.addSource('spt',{type:'geojson',data:GEOJSON});
+    const cExpr=['match',['get','proveedor'],...Object.entries(PC).flat(),'#888'];
+    mapGL.addLayer({id:'spt-fill',type:'fill',source:'spt',paint:{'fill-color':cExpr,'fill-opacity':0.45}});
+    mapGL.addLayer({id:'spt-line',type:'line',source:'spt',paint:{'line-color':'#000','line-width':0.4}});
+    mapGL.addLayer({id:'spt-hl',type:'fill',source:'spt',paint:{'fill-color':'#ff4400','fill-opacity':0.85},filter:['==','nomenclatura','__none__']});
+    mapGL.addLayer({id:'spt-hl-line',type:'line',source:'spt',paint:{'line-color':'#ff4400','line-width':4},filter:['==','nomenclatura','__none__']});
+    mapGL.on('click','spt-fill',e=>{
+      const p=e.features[0].properties;const c=pColor(p.proveedor);
+      new mapboxgl.Popup().setLngLat(e.lngLat).setHTML(
+        `<strong style="color:${c};font-size:14px">${p.zonificacion}</strong><br>
+         <b>Proveedor:</b> ${p.proveedor}<br><b>Estación:</b> ${p.station}<br>
+         <b>Capacidad:</b> ${p.capacity}<br><b>Servicio:</b> ${p.service} XXS`
+      ).addTo(mapGL);
+    });
+    mapGL.on('mouseenter','spt-fill',()=>mapGL.getCanvas().style.cursor='pointer');
+    mapGL.on('mouseleave','spt-fill',()=>mapGL.getCanvas().style.cursor='');
+  });
+}
 
-                new mapboxgl.Popup()
-                    .setLngLat(e.lngLat)
-                    .setHTML(content)
-                    .addTo(map);
-            });
+function flyTo(nom) {
+  fetch(GEOJSON).then(r=>r.json()).then(data=>{
+    const feat=data.features.find(f=>f.properties.nomenclatura===nom);if(!feat)return;
+    const coords=[];const col=c=>{if(typeof c[0]==='number')coords.push(c);else c.forEach(col);};col(feat.geometry.coordinates);
+    if(!coords.length)return;
+    const lons=coords.map(c=>c[0]),lats=coords.map(c=>c[1]);
+    mapGL.fitBounds([[Math.min(...lons),Math.min(...lats)],[Math.max(...lons),Math.max(...lats)]],{padding:60,maxZoom:12});
+    mapGL.setFilter('spt-hl',['==','nomenclatura',nom]);
+    mapGL.setFilter('spt-hl-line',['==','nomenclatura',nom]);
+    setTimeout(()=>{mapGL.setFilter('spt-hl',['==','nomenclatura','__none__']);mapGL.setFilter('spt-hl-line',['==','nomenclatura','__none__']);},3000);
+  });
+}
 
-            // Cambiar el cursor a "pointer" cuando está sobre un polígono
-            map.on('mouseenter', 'geojson-layer', () => {
-                map.getCanvas().style.cursor = 'pointer';
-            });
+function highlightSeries(members) {
+  mapGL.setFilter('spt-hl',['in','nomenclatura',...members]);
+  mapGL.setFilter('spt-hl-line',['in','nomenclatura',...members]);
+  setTimeout(()=>{mapGL.setFilter('spt-hl',['==','nomenclatura','__none__']);mapGL.setFilter('spt-hl-line',['==','nomenclatura','__none__']);},3000);
+  const coords=[];
+  allFeats.filter(f=>members.includes(f.properties.nomenclatura)).forEach(f=>{
+    const col=c=>{if(typeof c[0]==='number')coords.push(c);else c.forEach(col);};col(f.geometry.coordinates);
+  });
+  if(!coords.length)return;
+  const lons=coords.map(c=>c[0]),lats=coords.map(c=>c[1]);
+  mapGL.fitBounds([[Math.min(...lons),Math.min(...lats)],[Math.max(...lons),Math.max(...lats)]],{padding:50,maxZoom:10});
+}
 
-            // Restaurar el cursor cuando sale del polígono
-            map.on('mouseleave', 'geojson-layer', () => {
-                map.getCanvas().style.cursor = '';
-            });
-        });
-
-        // Manejo de errores
-        map.on('error', function(e) {
-            console.error('Error al cargar el GeoJSON o el mapa:', e);
-        });
-    };
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+fetch(GEOJSON).then(r=>r.json()).then(data=>{
+  allFeats=data.features;
+  allFeats.forEach(f=>{FM[f.properties.nomenclatura]=f.properties;});
+  const station=allFeats.find(f=>f.properties.station)?.properties.station||'';
+  document.getElementById('sorter-title').textContent=`Sorter Loop — ${station}`;
+  document.getElementById('sorter-meta').textContent=`${GEOJSON.split('/').pop()} · ${allFeats.length} posiciones`;
+  document.getElementById('total-badge').textContent=`${allFeats.length} total`;
+  buildSeriesMap(); buildControls(); render();
+});
 </script>
-
 </body>
 </html>
