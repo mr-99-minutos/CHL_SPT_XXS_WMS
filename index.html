@@ -7,7 +7,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="./config.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.css" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; color: #eee; }
@@ -350,6 +352,14 @@ function initMap() {
   mapboxgl.accessToken=MAPBOX_TOKEN;
   mapGL=new mapboxgl.Map({container:'map',style:'mapbox://styles/mapbox/streets-v11',center:[-71.543,-35.675],zoom:4.5});
   mapGL.addControl(new mapboxgl.NavigationControl());
+  mapGL.addControl(new MapboxGeocoder({
+    accessToken: mapboxgl.accessToken,
+    mapboxgl: mapboxgl,
+    countries: 'cl',
+    language: 'es',
+    placeholder: 'Buscar dirección en Chile...',
+    marker: { color: '#e53935' }
+  }), 'top-left');
   mapGL.on('load',()=>{
     mapGL.addSource('spt',{type:'geojson',data:GEOJSON});
     const cExpr=['match',['get','proveedor'],...Object.entries(PC).flat(),'#888'];
