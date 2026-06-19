@@ -394,7 +394,7 @@ class NominatimGeocoder {
     return c;
   }
   _search(q,res) {
-    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', Chile')}&format=json&limit=6&addressdetails=1&accept-language=es`)
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', Chile')}&format=json&limit=6&addressdetails=1&dedupe=1&accept-language=es`)
       .then(r=>r.json()).then(d=>this._render(d,res)).catch(()=>res.classList.remove('open'));
   }
   _render(data,res) {
@@ -403,13 +403,22 @@ class NominatimGeocoder {
       return res.classList.add('open');
     }
     res.innerHTML=data.map((r,i)=>{
-      const p=r.display_name.split(', ');
-      return `<div class="geocoder-result" data-i="${i}"><div class="geocoder-result-main">${p.slice(0,2).join(', ')}</div><div class="geocoder-result-sub">${p.slice(2,5).join(', ')}</div></div>`;
+      const a=r.address||{};
+      const road=a.road||a.pedestrian||a.street||'';
+      const num=a.house_number?`${a.house_number} `:'';
+      const main=(num+road)||r.display_name.split(', ').slice(0,2).join(', ');
+      const commune=a.suburb||a.neighbourhood||a.city_district||'';
+      const city=a.city||a.town||a.county||'';
+      const sub=[commune,city].filter(Boolean).join(', ')||r.display_name.split(', ').slice(2,5).join(', ');
+      return `<div class="geocoder-result" data-i="${i}"><div class="geocoder-result-main">${main}</div><div class="geocoder-result-sub">${sub}</div></div>`;
     }).join('')+'<div class="geocoder-powered">© OpenStreetMap contributors</div>';
     res.querySelectorAll('[data-i]').forEach(el=>{
       const item=data[+el.dataset.i];
       el.addEventListener('click',()=>{
-        this._c.querySelector('.geocoder-input').value=item.display_name.split(', ').slice(0,3).join(', ');
+        const a=item.address||{};
+        const road=a.road||a.pedestrian||'';
+        const num=a.house_number?`${a.house_number} `:'';
+        this._c.querySelector('.geocoder-input').value=(num+road)||item.display_name.split(', ').slice(0,3).join(', ');
         res.classList.remove('open');
         this._flyTo(+item.lon,+item.lat,item);
       });
