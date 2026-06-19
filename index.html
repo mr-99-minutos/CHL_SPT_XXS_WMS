@@ -394,7 +394,7 @@ class NominatimGeocoder {
     return c;
   }
   _search(q,res) {
-    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', Chile')}&format=json&limit=6&addressdetails=1&dedupe=1&accept-language=es`)
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=8&addressdetails=1&dedupe=1&countrycodes=cl&accept-language=es`)
       .then(r=>r.json()).then(d=>this._render(d,res)).catch(()=>res.classList.remove('open'));
   }
   _render(data,res) {
@@ -402,18 +402,25 @@ class NominatimGeocoder {
       res.innerHTML='<div class="geocoder-result" style="color:#888;cursor:default;font-size:12px">Sin resultados para esta dirección</div>';
       return res.classList.add('open');
     }
-    res.innerHTML=data.map((r,i)=>{
+    const seen=new Set();
+    const items=data.filter(r=>{
       const a=r.address||{};
-      const road=a.road||a.pedestrian||a.street||'';
+      const k=(a.road||a.pedestrian||r.display_name.split(', ')[0])+'|'+(a.city||a.town||a.county||'');
+      if(seen.has(k))return false; seen.add(k); return true;
+    });
+    res.innerHTML=items.map((r,i)=>{
+      const a=r.address||{};
+      const road=a.road||a.pedestrian||a.street||r.display_name.split(', ')[0];
       const num=a.house_number?`${a.house_number} `:'';
-      const main=(num+road)||r.display_name.split(', ').slice(0,2).join(', ');
+      const main=num+road;
       const commune=a.suburb||a.neighbourhood||a.city_district||'';
       const city=a.city||a.town||a.county||'';
-      const sub=[commune,city].filter(Boolean).join(', ')||r.display_name.split(', ').slice(2,5).join(', ');
-      return `<div class="geocoder-result" data-i="${i}"><div class="geocoder-result-main">${main}</div><div class="geocoder-result-sub">${sub}</div></div>`;
+      const sub=[commune,city].filter(Boolean).join(', ')||r.display_name.split(', ').slice(1,4).join(', ');
+      const badge=a.house_number?'<span style="font-size:9px;font-weight:700;background:#e8f5e9;color:#2e7d32;padding:1px 5px;border-radius:3px;margin-left:6px;vertical-align:middle">exacta</span>':'';
+      return `<div class="geocoder-result" data-i="${i}"><div class="geocoder-result-main">${main}${badge}</div><div class="geocoder-result-sub">${sub}</div></div>`;
     }).join('')+'<div class="geocoder-powered">© OpenStreetMap contributors</div>';
     res.querySelectorAll('[data-i]').forEach(el=>{
-      const item=data[+el.dataset.i];
+      const item=items[+el.dataset.i];
       el.addEventListener('click',()=>{
         const a=item.address||{};
         const road=a.road||a.pedestrian||'';
