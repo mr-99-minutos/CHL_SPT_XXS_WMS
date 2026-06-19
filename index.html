@@ -7,9 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="./config.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
-  <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.css" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
-  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; background: #1a1a2e; color: #eee; }
@@ -92,6 +90,21 @@
     .tt-row  { display: flex; justify-content: space-between; gap: 10px; margin-top: 2px; }
     .tt-lbl  { color: #777; }
     .tt-members { margin-top: 6px; font-size: 10px; color: #bbb; line-height: 1.6; word-break: break-all; }
+
+    /* ── Address Geocoder ── */
+    .nominatim-geocoder { position: relative; z-index: 10; margin: 10px; }
+    .geocoder-wrap { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.25); padding: 8px 12px; min-width: 265px; }
+    .geocoder-icon { color: #888; font-size: 14px; flex-shrink: 0; }
+    .geocoder-input { border: none; outline: none; font-size: 13px; color: #333; width: 100%; background: transparent; font-family: 'Segoe UI', Arial, sans-serif; }
+    .geocoder-input::placeholder { color: #aaa; }
+    .geocoder-clear { background: none; border: none; color: #bbb; cursor: pointer; font-size: 14px; padding: 0 2px; flex-shrink: 0; }
+    .geocoder-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.18); overflow: hidden; display: none; }
+    .geocoder-results.open { display: block; }
+    .geocoder-result { padding: 9px 14px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+    .geocoder-result:hover { background: #f5f5f5; }
+    .geocoder-result-main { font-size: 13px; font-weight: 600; color: #222; }
+    .geocoder-result-sub { font-size: 11px; color: #888; margin-top: 2px; }
+    .geocoder-powered { padding: 5px 14px; font-size: 10px; color: #bbb; text-align: right; border-top: 1px solid #f0f0f0; }
   </style>
 </head>
 <body>
@@ -347,19 +360,84 @@ function buildSeriesMap() {
   });
 }
 
+// ── Address Geocoder (Nominatim / OpenStreetMap) ─────────────────────────────
+class NominatimGeocoder {
+  constructor(opts={}) {
+    this._ph=opts.placeholder||'Buscar dirección en Chile...';
+    this._marker=null; this._debounce=null;
+  }
+  onAdd(map) {
+    this._map=map;
+    const c=document.createElement('div');
+    c.className='nominatim-geocoder mapboxgl-ctrl';
+    c.innerHTML=`<div class="geocoder-wrap">
+      <span class="geocoder-icon">&#128269;</span>
+      <input class="geocoder-input" type="text" placeholder="${this._ph}" autocomplete="off" spellcheck="false">
+      <button class="geocoder-clear" style="display:none" title="Limpiar">&#x2715;</button>
+    </div><div class="geocoder-results"></div>`;
+    this._c=c;
+    const inp=c.querySelector('.geocoder-input');
+    const clr=c.querySelector('.geocoder-clear');
+    const res=c.querySelector('.geocoder-results');
+    inp.addEventListener('input',()=>{
+      const q=inp.value.trim();
+      clr.style.display=q?'':'none';
+      clearTimeout(this._debounce);
+      if(q.length<3){res.classList.remove('open');return;}
+      this._debounce=setTimeout(()=>this._search(q,res),350);
+    });
+    clr.addEventListener('click',()=>{
+      inp.value='';clr.style.display='none';res.classList.remove('open');
+      if(this._marker){this._marker.remove();this._marker=null;}
+    });
+    document.addEventListener('click',e=>{if(!c.contains(e.target))res.classList.remove('open');});
+    return c;
+  }
+  _search(q,res) {
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', Chile')}&format=json&limit=6&addressdetails=1&accept-language=es`)
+      .then(r=>r.json()).then(d=>this._render(d,res)).catch(()=>res.classList.remove('open'));
+  }
+  _render(data,res) {
+    if(!data.length){
+      res.innerHTML='<div class="geocoder-result" style="color:#888;cursor:default;font-size:12px">Sin resultados para esta dirección</div>';
+      return res.classList.add('open');
+    }
+    res.innerHTML=data.map((r,i)=>{
+      const p=r.display_name.split(', ');
+      return `<div class="geocoder-result" data-i="${i}"><div class="geocoder-result-main">${p.slice(0,2).join(', ')}</div><div class="geocoder-result-sub">${p.slice(2,5).join(', ')}</div></div>`;
+    }).join('')+'<div class="geocoder-powered">© OpenStreetMap contributors</div>';
+    res.querySelectorAll('[data-i]').forEach(el=>{
+      const item=data[+el.dataset.i];
+      el.addEventListener('click',()=>{
+        this._c.querySelector('.geocoder-input').value=item.display_name.split(', ').slice(0,3).join(', ');
+        res.classList.remove('open');
+        this._flyTo(+item.lon,+item.lat,item);
+      });
+    });
+    res.classList.add('open');
+  }
+  _flyTo(lng,lat,item) {
+    if(this._marker)this._marker.remove();
+    this._marker=new mapboxgl.Marker({color:'#e53935'}).setLngLat([lng,lat]).addTo(this._map);
+    if(item.boundingbox){
+      const[s,n,w,e]=item.boundingbox.map(Number);
+      this._map.fitBounds([[w,s],[e,n]],{padding:80,maxZoom:16});
+    } else {
+      this._map.flyTo({center:[lng,lat],zoom:16});
+    }
+  }
+  onRemove(){
+    if(this._marker)this._marker.remove();
+    this._c.parentNode.removeChild(this._c);
+  }
+}
+
 // ── Map ───────────────────────────────────────────────────────────────────────
 function initMap() {
   mapboxgl.accessToken=MAPBOX_TOKEN;
   mapGL=new mapboxgl.Map({container:'map',style:'mapbox://styles/mapbox/streets-v11',center:[-71.543,-35.675],zoom:4.5});
   mapGL.addControl(new mapboxgl.NavigationControl());
-  mapGL.addControl(new MapboxGeocoder({
-    accessToken: mapboxgl.accessToken,
-    mapboxgl: mapboxgl,
-    countries: 'cl',
-    language: 'es',
-    placeholder: 'Buscar dirección en Chile...',
-    marker: { color: '#e53935' }
-  }), 'top-left');
+  mapGL.addControl(new NominatimGeocoder({placeholder:'Buscar dirección en Chile...'}), 'top-left');
   mapGL.on('load',()=>{
     mapGL.addSource('spt',{type:'geojson',data:GEOJSON});
     const cExpr=['match',['get','proveedor'],...Object.entries(PC).flat(),'#888'];
